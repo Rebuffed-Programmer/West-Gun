@@ -1,34 +1,150 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-br">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Wild West Guns - Clone</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
     <style>
-        body { margin: 0; overflow: hidden; cursor: crosshair; background: #87CEEB; }
-        #game-container { width: 100vw; height: 100vh; position: relative; }
-        .target { width: 50px; height: 50px; background: red; position: absolute; border-radius: 50%; }
+        body { margin: 0; background: #000; overflow: hidden; }
+        canvas { display: block; margin: 0 auto; }
     </style>
 </head>
 <body>
 
-<div id="game-container"></div>
-
 <script>
-    const container = document.getElementById('game-container');
+// --- CONFIGURAÇÃO DO JOGO ---
+const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    parent: 'game-container',
+    scene: { preload: preload, create: create, update: update }
+};
 
-    function createTarget() {
-        const target = document.createElement('div');
-        target.className = 'target';
-        target.style.left = Math.random() * (window.innerWidth - 50) + 'px';
-        target.style.top = Math.random() * (window.innerHeight - 50) + 'px';
+const game = new Phaser.Game(config);
+let currentState = 'MENU'; // MENU ou PLAYING
+let score = 0;
+let ammo = 6;
+let isHolding = false;
+
+function preload() {
+    // Aqui você carregaria as imagens reais
+    // Ex: this.load.image('tambor', 'caminho/seu_tambor.png');
+    // Como não tenho os arquivos, vou criar formas básicas no 'create'
+}
+
+function create() {
+    const scene = this;
+    
+    // --- GRUPO DO MENU (TAMBOR) ---
+    this.menuGroup = this.add.container(400, 300);
+    
+    // Criando um tambor visual simples (substitua por imagem depois)
+    let tamborCirc = this.add.circle(0, 0, 200, 0x333333, 0.8).setStrokeStyle(4, 0x000000);
+    this.menuGroup.add(tamborCirc);
+
+    // Criando 6 furos de bala (Níveis)
+    this.niveis = [];
+    for (let i = 0; i < 6; i++) {
+        let angle = (i * 60) * (Math.PI / 180);
+        let x = Math.cos(angle) * 130;
+        let y = Math.sin(angle) * 130;
         
-        target.onclick = function() {
-            this.remove(); // "Acertou o alvo"
-            createTarget(); // Cria o próximo
-        };
-
-        container.appendChild(target);
+        let furo = this.add.circle(x, y, 40, 0x111111).setInteractive();
+        let texto = this.add.text(x - 5, y - 10, (i + 1), { fontSize: '24px', color: '#fff' });
+        
+        furo.on('pointerdown', () => iniciarNivel(scene, i + 1));
+        this.menuGroup.add([furo, texto]);
     }
 
-    createTarget(); // Inicia o primeiro alvo
+    this.add.text(400, 50, "WILD WEST GUNS CLONE", { fontSize: '40px', color: '#ffcc00' }).setOrigin(0.5);
+    this.instr = this.add.text(400, 550, "CLIQUE NO TAMBOR PARA ESCOLHER O NÍVEL", { fontSize: '20px', color: '#fff' }).setOrigin(0.5);
+
+    // --- ELEMENTOS DE JOGO (Escondidos no início) ---
+    this.gameGroup = this.add.container(0, 0).setVisible(false);
+    this.scoreText = this.add.text(50, 530, '$0', { fontSize: '42px', color: '#ff0000', fontStyle: 'bold' });
+    this.gameGroup.add(this.scoreText);
+
+    // Mira (Crosshair)
+    this.crosshair = this.add.circle(0, 0, 15).setStrokeStyle(3, 0xff0000);
+    this.gameGroup.add(this.crosshair);
+
+    // --- LÓGICA DE TOQUE E SEGURAR (Metralhadora) ---
+    this.input.on('pointerdown', (pointer) => {
+        if (currentState === 'PLAYING') {
+            atirar(scene, pointer);
+            isHolding = true;
+        }
+    });
+
+    this.input.on('pointerup', () => { isHolding = false; });
+}
+
+function update(time, delta) {
+    if (currentState === 'MENU') {
+        this.menuGroup.angle += 0.2; // Tambor girando devagar no menu
+    }
+
+    if (currentState === 'PLAYING') {
+        this.crosshair.setPosition(this.input.x, this.input.y);
+        
+        // Se segurar, ativa modo metralhadora
+        if (isHolding && time % 10 < 2) { 
+            atirar(this, this.input.activePointer);
+        }
+    }
+}
+
+function iniciarNivel(scene, nivel) {
+    currentState = 'PLAYING';
+    scene.menuGroup.setVisible(false);
+    scene.instr.setVisible(false);
+    scene.gameGroup.setVisible(true);
+    
+    // Simular o fundo do nível (Mudar cor dependendo do nível)
+    scene.cameras.main.setBackgroundColor(0x87CEEB); // Céu azul
+
+    // Criar alvos aleatórios
+    spawnAlvos(scene);
+}
+
+function spawnAlvos(scene) {
+    if (currentState !== 'PLAYING') return;
+
+    let x = Phaser.Math.Between(100, 700);
+    let y = Phaser.Math.Between(100, 400);
+    
+    // Representação de um balão ou inimigo
+    let alvo = scene.add.circle(x, y, 30, 0xffcc00).setInteractive();
+    scene.gameGroup.add(alvo);
+
+    alvo.on('pointerdown', () => {
+        score += 200;
+        scene.scoreText.setText('$' + score.toLocaleString());
+        alvo.destroy();
+        spawnAlvos(scene); // Cria o próximo
+    });
+
+    // O alvo some se você não atirar rápido
+    scene.time.delayedCall(2000, () => {
+        if (alvo.active) {
+            alvo.destroy();
+            spawnAlvos(scene);
+        }
+    });
+}
+
+function atirar(scene, pointer) {
+    // Efeito visual de "Flash" na tela
+    scene.cameras.main.flash(50, 255, 255, 255, true);
+    
+    // Sombras de tiro (Buraco na parede)
+    let hole = scene.add.circle(pointer.x, pointer.y, 5, 0x000000, 0.5);
+    scene.time.delayedCall(500, () => hole.destroy());
+}
 </script>
+
+<div id="game-container"></div>
 </body>
 </html>
